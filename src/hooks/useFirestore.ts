@@ -22,7 +22,8 @@ export function useCollection<T>(collectionPath: string, constraints: QueryConst
   const [error, setError] = useState<Error | null>(null);
 
   useEffect(() => {
-    if (collectionPath === 'null') {
+    // Guard: empty/null paths mean "no collection selected yet"
+    if (!collectionPath || collectionPath === 'null') {
       setData([]);
       setLoading(false);
       return;
