@@ -14,7 +14,8 @@ import {
   updateDoc,
   arrayUnion,
   arrayRemove,
-  increment
+  increment,
+  writeBatch
 } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { User, Post as PostType } from '../types';
@@ -106,28 +107,33 @@ export const Profile: React.FC = () => {
     
     const profileRef = doc(db, 'users', profileUser.uid);
     const currentRef = doc(db, 'users', currentUser.uid);
+    const batch = writeBatch(db);
 
     try {
       if (isFollowing) {
-        await updateDoc(profileRef, {
+        // Unfollow — remove from both docs in one atomic batch
+        batch.update(profileRef, {
           followers: arrayRemove(currentUser.uid),
           followersCount: increment(-1)
         });
-        await updateDoc(currentRef, {
+        batch.update(currentRef, {
           following: arrayRemove(profileUser.uid),
           followingCount: increment(-1)
         });
+        await batch.commit();
       } else {
-        await updateDoc(profileRef, {
+        // Follow — add to both docs in one atomic batch
+        batch.update(profileRef, {
           followers: arrayUnion(currentUser.uid),
           followersCount: increment(1)
         });
-        await updateDoc(currentRef, {
+        batch.update(currentRef, {
           following: arrayUnion(profileUser.uid),
           followingCount: increment(1)
         });
-        
-        // Send notification
+        await batch.commit();
+
+        // Send notification (outside batch — non-critical, failure won't affect follow)
         await addDoc(collection(db, 'notifications'), {
           recipientId: profileUser.uid,
           senderId: currentUser.uid,
@@ -136,11 +142,15 @@ export const Profile: React.FC = () => {
           type: 'follow',
           read: false,
           createdAt: new Date().toISOString()
-        });
+        }).catch(err => console.warn('Notification failed (non-critical):', err));
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error following user:", error);
-      toast.error("Failed to update follow status");
+      if (error?.code === 'permission-denied') {
+        toast.error("Permission denied — check your Firestore security rules.");
+      } else {
+        toast.error("Failed to update follow status");
+      }
     }
   };
 
