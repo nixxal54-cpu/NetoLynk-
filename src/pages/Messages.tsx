@@ -401,7 +401,7 @@ export const Messages: React.FC = () => {
     [user?.uid]
   );
 
-  // FIX: use empty string (no-op) instead of literal 'null' when no chat selected
+  // Empty string path is now safely handled by useCollection (returns [] immediately)
   const { data: messages, loading: messagesLoading } = useCollection<ExtendedMessage>(
     selectedChat ? `chats/${selectedChat.id}/messages` : '',
     [orderBy('createdAt', 'asc')],
