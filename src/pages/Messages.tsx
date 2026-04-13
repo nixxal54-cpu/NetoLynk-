@@ -8,6 +8,7 @@ import {
   where,
   orderBy,
   addDoc,
+  increment,
   serverTimestamp,
   doc,
   updateDoc,
@@ -449,9 +450,11 @@ export const Messages: React.FC = () => {
   useEffect(() => {
     if (!selectedChat || !user || messages.length === 0) return;
     const lastMsg = messages[messages.length - 1];
+    // If the last message is from the partner, mark as read and clear our unread badge
     if (lastMsg.senderId !== user.uid) {
       updateDoc(doc(db, 'chats', selectedChat.id), {
         [`readBy.${user.uid}`]: new Date().toISOString(),
+        [`unreadCount.${user.uid}`]: 0,
       });
     }
   }, [messages, selectedChat, user]);
@@ -529,15 +532,15 @@ export const Messages: React.FC = () => {
           : null,
       });
 
+      const partnerId = selectedChat.participants.find((p) => p !== user.uid) ?? '';
       await updateDoc(doc(db, 'chats', selectedChat.id), {
         lastMessage: imageUrl ? 'Sent an image' : text.trim(),
         lastMessageAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
-        [`unreadCount.${selectedChat.participants.find((p) => p !== user.uid)}`]:
-          // increment server-side; simplified here — use FieldValue.increment(1) in production
-          (selectedChat as any).unreadCount?.[
-            selectedChat.participants.find((p) => p !== user.uid) ?? ''
-          ] + 1 || 1,
+        // Increment partner's unread count
+        [`unreadCount.${partnerId}`]: increment(1),
+        // Clear readBy for partner so "Seen" resets on new message
+        [`readBy.${partnerId}`]: null,
       });
 
       setMessageText('');
@@ -791,17 +794,19 @@ export const Messages: React.FC = () => {
               {/* Typing indicator */}
               {partnerTyping && <TypingIndicator />}
 
-              {/* Read receipt */}
+              {/* Read receipt — only show on last sent message, only "Seen" if readBy is after that message */}
               {messages.length > 0 &&
-                messages[messages.length - 1].senderId === user?.uid && (
-                  <p className="text-[10px] text-muted-foreground self-end pr-1 mt-0.5">
-                    {(selectedChat as any).readBy?.[
-                      selectedChat.participants.find((p) => p !== user?.uid) ?? ''
-                    ]
-                      ? 'Seen'
-                      : 'Delivered'}
-                  </p>
-                )}
+                messages[messages.length - 1].senderId === user?.uid && (() => {
+                  const lastMsg = messages[messages.length - 1];
+                  const partnerId = selectedChat.participants.find((p) => p !== user?.uid) ?? '';
+                  const readAt = (selectedChat as any).readBy?.[partnerId];
+                  const isSeen = readAt && new Date(readAt) > new Date(lastMsg.createdAt);
+                  return (
+                    <p className="text-[10px] text-muted-foreground self-end pr-1 mt-0.5">
+                      {isSeen ? 'Seen' : 'Delivered'}
+                    </p>
+                  );
+                })()}
 
               <div ref={messagesEndRef} />
             </div>
