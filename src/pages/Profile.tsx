@@ -6,12 +6,14 @@ import {
   where, 
   orderBy, 
   getDocs, 
+  getDoc,
   doc, 
   onSnapshot,
   addDoc,
   serverTimestamp,
   limit,
   updateDoc,
+  setDoc,
   arrayUnion,
   arrayRemove,
   increment,
@@ -62,24 +64,35 @@ export const Profile: React.FC = () => {
         setProfileUser(userData);
         setLoading(false);
       } else {
-        // Fallback: check if they have posts and construct a basic profile
+        // Fallback: find a post by this username and use the userId to look up their real doc
         const postsQ = query(collection(db, 'posts'), where('username', '==', username), limit(1));
         const postsSnap = await getDocs(postsQ);
         if (!postsSnap.empty) {
           const postData = postsSnap.docs[0].data();
-          setProfileUser({
-            uid: postData.userId,
-            username: postData.username,
-            displayName: postData.username,
-            email: '',
-            profileImage: postData.userProfileImage,
-            coverImage: '',
-            bio: 'This is a demo or legacy account.',
-            followersCount: 0,
-            followingCount: 0,
-            postsCount: 0,
-            createdAt: postData.createdAt
-          });
+          // Try to fetch the real user document first
+          const userDocSnap = await getDoc(doc(db, 'users', postData.userId));
+          if (userDocSnap.exists()) {
+            setProfileUser({ ...userDocSnap.data(), uid: userDocSnap.id } as User);
+          } else {
+            // User doc missing — create a minimal stub so follow/unfollow works
+            const stub = {
+              uid: postData.userId,
+              username: postData.username,
+              displayName: postData.username,
+              email: '',
+              profileImage: postData.userProfileImage || '',
+              coverImage: '',
+              bio: '',
+              followers: [],
+              followersCount: 0,
+              following: [],
+              followingCount: 0,
+              postsCount: 0,
+              createdAt: postData.createdAt
+            };
+            await setDoc(doc(db, 'users', postData.userId), stub, { merge: true });
+            setProfileUser(stub as User);
+          }
         } else {
           setProfileUser(null);
         }
