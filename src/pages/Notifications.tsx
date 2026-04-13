@@ -1,7 +1,7 @@
 import React from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useCollection } from '../hooks/useFirestore';
-import { collection, query, where, orderBy, limit } from 'firebase/firestore';
+import { where, orderBy } from 'firebase/firestore';
 import { Bell, Loader2, Heart, MessageCircle, UserPlus, Sparkles } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { motion } from 'motion/react';
@@ -24,48 +24,50 @@ export const Notifications: React.FC = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
 
-  // Fetch user-specific notifications
-  const { data: userNotifications, loading: userLoading } = useCollection<Notification>('notifications', 
-    user ? [
-      where('recipientId', '==', user.uid),
-      orderBy('createdAt', 'desc'),
-      limit(20)
-    ] : [],
+  // ✅ No limit() — all notifications persist until user deletes them
+  const { data: userNotifications, loading: userLoading } = useCollection<Notification>(
+    'notifications',
+    user
+      ? [
+          where('recipientId', '==', user.uid),
+          orderBy('createdAt', 'desc'),
+        ]
+      : [],
     [user?.uid]
   );
 
-  // Fetch global system notifications
-  const { data: systemNotifications, loading: systemLoading } = useCollection<Notification>('notifications', [
-    where('recipientId', '==', 'all'),
-    orderBy('createdAt', 'desc'),
-    limit(5)
-  ]);
+  // ✅ No limit() on system notifications either
+  const { data: systemNotifications, loading: systemLoading } = useCollection<Notification>(
+    'notifications',
+    [
+      where('recipientId', '==', 'all'),
+      orderBy('createdAt', 'desc'),
+    ]
+  );
 
   const loading = userLoading || systemLoading;
 
-  // Combine and sort notifications
-  const allNotifications = [...userNotifications, ...systemNotifications].sort((a, b) => 
-    new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+  const allNotifications = [...userNotifications, ...systemNotifications].sort(
+    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
   );
 
   const getNotificationIcon = (type: string) => {
     switch (type) {
-      case 'like': return <Heart className="w-5 h-5 text-pink-500 fill-pink-500" />;
+      case 'like':    return <Heart className="w-5 h-5 text-pink-500 fill-pink-500" />;
       case 'comment': return <MessageCircle className="w-5 h-5 text-primary" />;
-      case 'follow': return <UserPlus className="w-5 h-5 text-green-500" />;
-      case 'system': return <Sparkles className="w-5 h-5 text-primary" />;
-      default: return <Bell className="w-5 h-5 text-muted-foreground" />;
+      case 'follow':  return <UserPlus className="w-5 h-5 text-green-500" />;
+      case 'system':  return <Sparkles className="w-5 h-5 text-primary" />;
+      default:        return <Bell className="w-5 h-5 text-muted-foreground" />;
     }
   };
 
   const getNotificationText = (notification: Notification) => {
     if (notification.type === 'system') return notification.text;
-    
     switch (notification.type) {
-      case 'like': return 'liked your post.';
+      case 'like':    return 'liked your post.';
       case 'comment': return 'commented on your post.';
-      case 'follow': return 'started following you.';
-      default: return 'interacted with you.';
+      case 'follow':  return 'started following you.';
+      default:        return 'interacted with you.';
     }
   };
 
@@ -109,10 +111,13 @@ export const Notifications: React.FC = () => {
                     alt={notification.senderUsername} 
                     className="w-8 h-8 rounded-full object-cover"
                   />
-                  <span className="font-bold hover:underline" onClick={(e) => {
-                    e.stopPropagation();
-                    if (notification.type !== 'system') navigate(`/profile/${notification.senderUsername}`);
-                  }}>
+                  <span
+                    className="font-bold hover:underline"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (notification.type !== 'system') navigate(`/profile/${notification.senderUsername}`);
+                    }}
+                  >
                     {notification.senderUsername}
                   </span>
                   {notification.type === 'system' && (
