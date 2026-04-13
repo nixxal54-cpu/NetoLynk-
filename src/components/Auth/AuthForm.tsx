@@ -10,8 +10,10 @@ import { doc, setDoc, getDoc, serverTimestamp } from 'firebase/firestore';
 import { auth, db } from '../../lib/firebase';
 import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'motion/react';
+import { useAccountSwitcher } from '../../context/AccountSwitcherContext';
 
 export const AuthForm: React.FC = () => {
+  const { addCurrentAccount } = useAccountSwitcher();
   const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -26,7 +28,6 @@ export const AuthForm: React.FC = () => {
       const result = await signInWithPopup(auth, provider);
       const user = result.user;
 
-      // Check if user document exists, if not create it
       const userDoc = await getDoc(doc(db, 'users', user.uid));
       if (!userDoc.exists()) {
         const baseUsername = user.email?.split('@')[0] || 'user';
@@ -45,6 +46,9 @@ export const AuthForm: React.FC = () => {
           serverCreatedAt: serverTimestamp()
         });
       }
+      
+      // Save credentials for seamless switching
+      await addCurrentAccount(user.uid, 'google');
       toast.success('Welcome to Netolynk!');
     } catch (error: any) {
       console.error("Google Auth error:", error);
@@ -60,7 +64,9 @@ export const AuthForm: React.FC = () => {
 
     try {
       if (isLogin) {
-        await signInWithEmailAndPassword(auth, email, password);
+        const res = await signInWithEmailAndPassword(auth, email, password);
+        // Save credentials for seamless switching
+        await addCurrentAccount(res.user.uid, 'password', btoa(password));
         toast.success('Welcome back!');
       } else {
         const userCredential = await createUserWithEmailAndPassword(auth, email, password);
@@ -68,7 +74,6 @@ export const AuthForm: React.FC = () => {
 
         await updateProfile(user, { displayName });
 
-        // Create user document in Firestore
         await setDoc(doc(db, 'users', user.uid), {
           uid: user.uid,
           username: username.toLowerCase().replace(/\s/g, ''),
@@ -84,6 +89,8 @@ export const AuthForm: React.FC = () => {
           serverCreatedAt: serverTimestamp()
         });
 
+        // Save credentials for seamless switching
+        await addCurrentAccount(user.uid, 'password', btoa(password));
         toast.success('Account created successfully!');
       }
     } catch (error: any) {
