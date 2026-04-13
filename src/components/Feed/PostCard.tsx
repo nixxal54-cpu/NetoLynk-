@@ -24,7 +24,7 @@ import { Post } from '../../types';
 import { useAuth } from '../../context/AuthContext';
 import { cn } from '../../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
-import { doc, updateDoc, arrayUnion, arrayRemove, increment, deleteDoc } from 'firebase/firestore';
+import { doc, updateDoc, arrayUnion, arrayRemove, increment, deleteDoc, addDoc, collection } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 import { toast } from 'sonner';
 
@@ -77,6 +77,19 @@ export const PostCard: React.FC<PostCardProps> = ({ post }) => {
           likedBy: arrayUnion(user.uid),
           likesCount: increment(1)
         });
+        // Notify post owner (skip if liking own post)
+        if (post.userId !== user.uid) {
+          addDoc(collection(db, 'notifications'), {
+            recipientId: post.userId,
+            senderId: user.uid,
+            senderUsername: user.username,
+            senderProfileImage: user.profileImage || '',
+            type: 'like',
+            postId: post.id,
+            read: false,
+            createdAt: new Date().toISOString()
+          }).catch(() => {}); // non-critical
+        }
       }
     } catch (error) {
       console.error("Error liking post:", error);
