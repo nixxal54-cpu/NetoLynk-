@@ -1,8 +1,5 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
-import {
-  signInWithEmailAndPassword,
-  signOut,
-} from 'firebase/auth';
+import { signOut } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
 import { auth, db } from '../lib/firebase';
 import { toast } from 'sonner';
@@ -13,8 +10,8 @@ export interface SavedAccount {
   displayName: string;
   profileImage: string;
   email: string;
-  // We store a token/credential hint — for real switch we re-auth
-  // For UX we persist basic info so we can show the list
+  authType?: 'password' | 'google';
+  secret?: string; // base64 encoded password for seamless switching
 }
 
 interface AccountSwitcherContextType {
@@ -22,8 +19,7 @@ interface AccountSwitcherContextType {
   showSwitcher: boolean;
   openSwitcher: () => void;
   closeSwitcher: () => void;
-  addCurrentAccount: (uid: string) => Promise<void>;
-  switchToAccount: (account: SavedAccount) => void;
+  addCurrentAccount: (uid: string, authType?: 'password' | 'google', secret?: string) => Promise<void>;
   removeAccount: (uid: string) => void;
   currentUid: string | null;
 }
@@ -34,7 +30,6 @@ const AccountSwitcherContext = createContext<AccountSwitcherContextType>({
   openSwitcher: () => {},
   closeSwitcher: () => {},
   addCurrentAccount: async () => {},
-  switchToAccount: () => {},
   removeAccount: () => {},
   currentUid: null,
 });
@@ -59,48 +54,46 @@ export const AccountSwitcherProvider: React.FC<{ children: React.ReactNode }> = 
     localStorage.setItem(STORAGE_KEY, JSON.stringify(savedAccounts));
   }, [savedAccounts]);
 
-  // Track current firebase user
-  useEffect(() => {
-    const unsub = auth.onAuthStateChanged((u) => {
-      setCurrentUid(u?.uid ?? null);
-    });
-    return () => unsub();
-  }, []);
-
-  const addCurrentAccount = useCallback(async (uid: string) => {
-    if (savedAccounts.some((a) => a.uid === uid)) return;
+  const addCurrentAccount = useCallback(async (uid: string, authType?: 'password' | 'google', secret?: string) => {
     try {
       const snap = await getDoc(doc(db, 'users', uid));
       if (!snap.exists()) return;
       const data = snap.data();
-      const account: SavedAccount = {
-        uid,
-        username: data.username,
-        displayName: data.displayName,
-        profileImage: data.profileImage || `https://api.dicebear.com/7.x/avataaars/svg?seed=${data.username}`,
-        email: data.email,
-      };
+      
       setSavedAccounts((prev) => {
-        if (prev.some((a) => a.uid === uid)) return prev;
-        return [...prev, account];
+        const existing = prev.find((a) => a.uid === uid);
+        
+        const newAccount: SavedAccount = {
+          uid,
+          username: data.username,
+          displayName: data.displayName,
+          profileImage: data.profileImage || `https://api.dicebear.com/7.x/avataaars/svg?seed=${data.username}`,
+          email: data.email,
+          authType: authType || existing?.authType,
+          secret: secret || existing?.secret,
+        };
+
+        if (existing) {
+          // Merge to prevent dropping the secret if called from a generic auth state change
+          return prev.map((a) => a.uid === uid ? { ...a, ...newAccount } : a);
+        }
+        return [...prev, newAccount];
       });
     } catch (e) {
       console.error('Failed to save account', e);
     }
-  }, [savedAccounts]);
+  }, []);
 
-  const switchToAccount = useCallback((account: SavedAccount) => {
-    setShowSwitcher(false);
-    if (account.uid === currentUid) return;
-    // Sign out current user, then prompt login for selected account
-    // Since Firebase doesn't support multi-session natively in browser,
-    // we sign out and show a toast guiding the user to sign in
-    signOut(auth).then(() => {
-      toast.info(`Signing in as @${account.username}…`, { duration: 2000 });
-      // Store pending switch so AuthForm can pre-fill
-      sessionStorage.setItem('netolynk_switch_email', account.email);
+  // Track current firebase user and auto-update basic profile info
+  useEffect(() => {
+    const unsub = auth.onAuthStateChanged((u) => {
+      setCurrentUid(u?.uid ?? null);
+      if (u?.uid) {
+        addCurrentAccount(u.uid);
+      }
     });
-  }, [currentUid]);
+    return () => unsub();
+  }, [addCurrentAccount]);
 
   const removeAccount = useCallback((uid: string) => {
     setSavedAccounts((prev) => prev.filter((a) => a.uid !== uid));
@@ -113,7 +106,6 @@ export const AccountSwitcherProvider: React.FC<{ children: React.ReactNode }> = 
       openSwitcher: () => setShowSwitcher(true),
       closeSwitcher: () => setShowSwitcher(false),
       addCurrentAccount,
-      switchToAccount,
       removeAccount,
       currentUid,
     }}>
