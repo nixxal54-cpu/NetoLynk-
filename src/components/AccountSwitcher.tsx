@@ -4,12 +4,12 @@ import { Plus, Check, X, LogOut, ChevronRight, ChevronLeft, Loader2 } from 'luci
 import { useAccountSwitcher, SavedAccount } from '../context/AccountSwitcherContext';
 import { useAuth } from '../context/AuthContext';
 import { auth } from '../lib/firebase';
-import { signInWithEmailAndPassword, signInWithPopup, GoogleAuthProvider } from 'firebase/auth';
+import { signInWithEmailAndPassword } from 'firebase/auth';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 
 export const AccountSwitcher: React.FC = () => {
-  const { savedAccounts, showSwitcher, closeSwitcher, removeAccount, currentUid, addCurrentAccount } = useAccountSwitcher();
+  const { savedAccounts, showSwitcher, closeSwitcher, removeAccount, currentUid, addCurrentAccount, logoutCurrentAccount } = useAccountSwitcher();
   const { user } = useAuth();
   const navigate = useNavigate();
   const backdropRef = useRef<HTMLDivElement>(null);
@@ -45,8 +45,7 @@ export const AccountSwitcher: React.FC = () => {
       return;
     }
 
-    // Seamless auto-login if we have the password stored
-    if (account.authType === 'password' && account.secret) {
+    if (account.secret) {
       setAutoSwitchingId(account.uid);
       try {
         const decodedPass = atob(account.secret);
@@ -54,15 +53,12 @@ export const AccountSwitcher: React.FC = () => {
         toast.success(`Switched to @${account.username}`);
         closeSwitcher();
       } catch (error) {
-        // Fallback to prompt if password was changed elsewhere
-        setSwitchTarget(account);
+        setSwitchTarget(account); // Fallback to prompt if password was changed
       } finally {
         setAutoSwitchingId(null);
       }
-    } else if (account.authType === 'google') {
-      setSwitchTarget(account); // Google requires user click to open popup
     } else {
-      setSwitchTarget(account); // Unknown state, show prompt
+      setSwitchTarget(account);
     }
   };
 
@@ -72,33 +68,11 @@ export const AccountSwitcher: React.FC = () => {
     setSwitching(true);
     try {
       await signInWithEmailAndPassword(auth, switchTarget.email, password);
-      // Save for seamless switching next time
-      await addCurrentAccount(switchTarget.uid, 'password', btoa(password));
+      await addCurrentAccount(switchTarget.uid, btoa(password));
       toast.success(`Switched to @${switchTarget.username}`);
       closeSwitcher();
     } catch (error: any) {
-      if (error.code === 'auth/invalid-credential' || error.code === 'auth/wrong-password') {
-        toast.error('Incorrect password.');
-      } else {
-        toast.error('Failed to switch. Try logging out and back in.');
-      }
-    } finally {
-      setSwitching(false);
-    }
-  };
-
-  const executeGoogleSwitch = async () => {
-    if (!switchTarget) return;
-    setSwitching(true);
-    const provider = new GoogleAuthProvider();
-    provider.setCustomParameters({ login_hint: switchTarget.email });
-    try {
-      await signInWithPopup(auth, provider);
-      await addCurrentAccount(switchTarget.uid, 'google');
-      toast.success(`Switched to @${switchTarget.username}`);
-      closeSwitcher();
-    } catch (error) {
-      toast.error('Google sign in failed.');
+      toast.error('Incorrect password or failed to switch.');
     } finally {
       setSwitching(false);
     }
@@ -121,8 +95,7 @@ export const AccountSwitcher: React.FC = () => {
 
   const handleLogout = () => {
     closeSwitcher();
-    auth.signOut();
-    toast.success('Signed out');
+    logoutCurrentAccount();
   };
 
   const currentAccount = savedAccounts.find((a) => a.uid === currentUid);
@@ -161,26 +134,12 @@ export const AccountSwitcher: React.FC = () => {
                     </div>
                   </div>
 
-                  {switchTarget.authType !== 'google' && (
-                    <form onSubmit={executeSwitch} className="space-y-3">
-                      <input type="password" placeholder="Enter password" value={password} onChange={e => setPassword(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3.5 text-white focus:border-primary outline-none transition-colors" autoFocus />
-                      <button disabled={switching || !password} type="submit" className="w-full bg-primary text-white py-3.5 rounded-xl font-bold disabled:opacity-50 transition-opacity flex items-center justify-center">
-                        {switching ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Log In'}
-                      </button>
-                    </form>
-                  )}
-
-                  {switchTarget.authType !== 'google' && (
-                    <div className="mt-4 relative flex items-center gap-3">
-                      <div className="flex-1 border-t border-white/10"></div>
-                      <span className="text-white/30 text-xs font-medium uppercase tracking-wider">OR</span>
-                      <div className="flex-1 border-t border-white/10"></div>
-                    </div>
-                  )}
-
-                  <button onClick={executeGoogleSwitch} disabled={switching} type="button" className="w-full mt-4 bg-white text-black py-3.5 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-gray-100 transition-colors disabled:opacity-50">
-                    {switching && switchTarget.authType === 'google' ? <Loader2 className="w-5 h-5 animate-spin text-black" /> : <><img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" className="w-5 h-5" alt="Google" /> Continue with Google</>}
-                  </button>
+                  <form onSubmit={executeSwitch} className="space-y-3">
+                    <input type="password" placeholder="Enter password" value={password} onChange={e => setPassword(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3.5 text-white focus:border-primary outline-none transition-colors" autoFocus />
+                    <button disabled={switching || !password} type="submit" className="w-full bg-primary text-white py-3.5 rounded-xl font-bold disabled:opacity-50 transition-opacity flex items-center justify-center">
+                      {switching ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Log In'}
+                    </button>
+                  </form>
                 </motion.div>
               ) : (
                 <motion.div key="account-list" initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }}>
