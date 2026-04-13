@@ -1,11 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { db } from '../lib/firebase';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'motion/react';
-import { ChevronLeft, Image as ImageIcon, Loader2, Smile } from 'lucide-react';
+import { ChevronLeft, Image as ImageIcon, Loader2, Smile, X } from 'lucide-react';
 import { getMoodIconByLabel } from '../components/Feed/PostCard';
 
 const MOODS = [
@@ -26,10 +26,57 @@ export const CreatePostPage: React.FC = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [selectedMood, setSelectedMood] = useState<{emoji: string, label: string} | null>(null);
   const [showMoods, setShowMoods] = useState(false);
+  const [selectedImages, setSelectedImages] = useState<string[]>([]);
+  const [isProcessingImages, setIsProcessingImages] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+
+    // Limit to 4 images total
+    const remaining = 4 - selectedImages.length;
+    const toProcess = files.slice(0, remaining);
+
+    if (files.length > remaining) {
+      toast.info(`Only ${remaining} more image(s) can be added (max 4)`);
+    }
+
+    setIsProcessingImages(true);
+    const readers = toProcess.map(file => {
+      if (file.size > 10 * 1024 * 1024) {
+        toast.error(`${file.name} is too large (max 10MB)`);
+        return Promise.resolve(null);
+      }
+      return new Promise<string | null>((resolve) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result as string);
+        reader.onerror = () => resolve(null);
+        reader.readAsDataURL(file);
+      });
+    });
+
+    Promise.all(readers).then(results => {
+      const valid = results.filter(Boolean) as string[];
+      setSelectedImages(prev => [...prev, ...valid]);
+      setIsProcessingImages(false);
+    });
+
+    // Reset input so same file can be re-selected
+    e.target.value = '';
+  };
+
+  const removeImage = (index: number) => {
+    setSelectedImages(prev => prev.filter((_, i) => i !== index));
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!text.trim() || !user) return;
+    if (!text.trim() && selectedImages.length === 0) {
+      toast.error('Please add some text or an image');
+      return;
+    }
+    if (!user) return;
 
     setIsSubmitting(true);
     try {
@@ -38,8 +85,8 @@ export const CreatePostPage: React.FC = () => {
         username: user.username,
         userProfileImage: user.profileImage || null,
         text: text.trim(),
-        mediaUrls: [],
-        type: 'text',
+        mediaUrls: selectedImages,
+        type: selectedImages.length > 0 ? 'image' : 'text',
         mood: selectedMood,
         likesCount: 0,
         commentsCount: 0,
@@ -61,6 +108,8 @@ export const CreatePostPage: React.FC = () => {
     }
   };
 
+  const canPost = (text.trim().length > 0 || selectedImages.length > 0) && !isSubmitting;
+
   return (
     <motion.div 
       initial={{ opacity: 0, x: 20 }}
@@ -77,7 +126,7 @@ export const CreatePostPage: React.FC = () => {
         </div>
         <button
           onClick={handleSubmit}
-          disabled={!text.trim() || isSubmitting}
+          disabled={!canPost}
           className="bg-primary text-primary-foreground px-6 py-1.5 rounded-full font-bold hover:opacity-90 transition-opacity disabled:opacity-50 flex items-center gap-2"
         >
           {isSubmitting && <Loader2 className="w-4 h-4 animate-spin" />}
@@ -104,19 +153,70 @@ export const CreatePostPage: React.FC = () => {
               </button>
             </div>
           )}
+
           <textarea
             value={text}
             onChange={(e) => setText(e.target.value)}
             placeholder={selectedMood ? `Why are you feeling ${selectedMood.label.toLowerCase()}?` : "What's happening?"}
-            className="w-full bg-transparent text-xl outline-none resize-none min-h-[150px] placeholder:text-muted-foreground/60 text-base"
+            className="w-full bg-transparent text-xl outline-none resize-none min-h-[120px] placeholder:text-muted-foreground/60 text-base"
             autoFocus
           />
+
+          {/* Image previews */}
+          {selectedImages.length > 0 && (
+            <div className={`grid gap-2 mt-3 mb-3 ${selectedImages.length === 1 ? 'grid-cols-1' : selectedImages.length === 2 ? 'grid-cols-2' : 'grid-cols-2'}`}>
+              {selectedImages.map((src, index) => (
+                <div key={index} className="relative group rounded-xl overflow-hidden aspect-square">
+                  <img
+                    src={src}
+                    alt={`Selected ${index + 1}`}
+                    className="w-full h-full object-cover"
+                  />
+                  <button
+                    onClick={() => removeImage(index)}
+                    className="absolute top-2 right-2 p-1.5 bg-black/60 hover:bg-black/80 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {isProcessingImages && (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground mt-2">
+              <Loader2 className="w-4 h-4 animate-spin" />
+              Processing images…
+            </div>
+          )}
           
           <div className="border-t border-border pt-4 flex items-center gap-4 relative">
-            <button className="text-primary hover:bg-primary/10 p-2 rounded-full transition-colors">
+            {/* ✅ Working image button */}
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={selectedImages.length >= 4}
+              className="text-primary hover:bg-primary/10 p-2 rounded-full transition-colors disabled:opacity-40 relative"
+              title={selectedImages.length >= 4 ? 'Max 4 images' : 'Add photo'}
+            >
               <ImageIcon className="w-6 h-6" />
+              {selectedImages.length > 0 && (
+                <span className="absolute -top-1 -right-1 w-4 h-4 bg-primary text-primary-foreground text-[10px] font-bold rounded-full flex items-center justify-center">
+                  {selectedImages.length}
+                </span>
+              )}
             </button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              multiple
+              className="hidden"
+              onChange={handleImageSelect}
+            />
+
             <button 
+              type="button"
               onClick={() => setShowMoods(!showMoods)}
               className={`p-2 rounded-full transition-colors flex items-center gap-2 ${showMoods || selectedMood ? 'bg-primary/10 text-primary' : 'text-primary hover:bg-primary/10'}`}
             >
@@ -134,6 +234,7 @@ export const CreatePostPage: React.FC = () => {
                   {MOODS.map(mood => (
                     <button
                       key={mood.label}
+                      type="button"
                       onClick={() => {
                         setSelectedMood(mood);
                         setShowMoods(false);
