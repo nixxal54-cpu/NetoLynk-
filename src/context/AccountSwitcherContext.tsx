@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
-import { signOut } from 'firebase/auth';
+import { signInWithEmailAndPassword, signOut } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
 import { auth, db } from '../lib/firebase';
 import { toast } from 'sonner';
@@ -10,7 +10,6 @@ export interface SavedAccount {
   displayName: string;
   profileImage: string;
   email: string;
-  authType?: 'password' | 'google';
   secret?: string; // base64 encoded password for seamless switching
 }
 
@@ -19,8 +18,9 @@ interface AccountSwitcherContextType {
   showSwitcher: boolean;
   openSwitcher: () => void;
   closeSwitcher: () => void;
-  addCurrentAccount: (uid: string, authType?: 'password' | 'google', secret?: string) => Promise<void>;
+  addCurrentAccount: (uid: string, secret?: string) => Promise<void>;
   removeAccount: (uid: string) => void;
+  logoutCurrentAccount: () => Promise<void>;
   currentUid: string | null;
 }
 
@@ -31,6 +31,7 @@ const AccountSwitcherContext = createContext<AccountSwitcherContextType>({
   closeSwitcher: () => {},
   addCurrentAccount: async () => {},
   removeAccount: () => {},
+  logoutCurrentAccount: async () => {},
   currentUid: null,
 });
 
@@ -54,7 +55,7 @@ export const AccountSwitcherProvider: React.FC<{ children: React.ReactNode }> = 
     localStorage.setItem(STORAGE_KEY, JSON.stringify(savedAccounts));
   }, [savedAccounts]);
 
-  const addCurrentAccount = useCallback(async (uid: string, authType?: 'password' | 'google', secret?: string) => {
+  const addCurrentAccount = useCallback(async (uid: string, secret?: string) => {
     try {
       const snap = await getDoc(doc(db, 'users', uid));
       if (!snap.exists()) return;
@@ -62,19 +63,16 @@ export const AccountSwitcherProvider: React.FC<{ children: React.ReactNode }> = 
       
       setSavedAccounts((prev) => {
         const existing = prev.find((a) => a.uid === uid);
-        
         const newAccount: SavedAccount = {
           uid,
           username: data.username,
           displayName: data.displayName,
           profileImage: data.profileImage || `https://api.dicebear.com/7.x/avataaars/svg?seed=${data.username}`,
           email: data.email,
-          authType: authType || existing?.authType,
           secret: secret || existing?.secret,
         };
 
         if (existing) {
-          // Merge to prevent dropping the secret if called from a generic auth state change
           return prev.map((a) => a.uid === uid ? { ...a, ...newAccount } : a);
         }
         return [...prev, newAccount];
@@ -84,13 +82,11 @@ export const AccountSwitcherProvider: React.FC<{ children: React.ReactNode }> = 
     }
   }, []);
 
-  // Track current firebase user and auto-update basic profile info
+  // Track current firebase user
   useEffect(() => {
     const unsub = auth.onAuthStateChanged((u) => {
       setCurrentUid(u?.uid ?? null);
-      if (u?.uid) {
-        addCurrentAccount(u.uid);
-      }
+      if (u?.uid) addCurrentAccount(u.uid);
     });
     return () => unsub();
   }, [addCurrentAccount]);
@@ -98,6 +94,30 @@ export const AccountSwitcherProvider: React.FC<{ children: React.ReactNode }> = 
   const removeAccount = useCallback((uid: string) => {
     setSavedAccounts((prev) => prev.filter((a) => a.uid !== uid));
   }, []);
+
+  const logoutCurrentAccount = useCallback(async () => {
+    if (currentUid) {
+      removeAccount(currentUid); // Remove from device on logout
+    }
+    
+    // Check if there is another account we can auto-switch to
+    const remaining = savedAccounts.filter(a => a.uid !== currentUid);
+    const nextPassAcc = remaining.find(a => a.secret);
+    
+    if (nextPassAcc) {
+      try {
+        await signInWithEmailAndPassword(auth, nextPassAcc.email, atob(nextPassAcc.secret!));
+        toast.success(`Switched to @${nextPassAcc.username}`);
+        return;
+      } catch (e) {
+        console.error('Auto-switch failed', e);
+      }
+    }
+    
+    // Default sign out if no auto-switch is possible
+    await signOut(auth);
+    toast.success('Signed out');
+  }, [currentUid, savedAccounts, removeAccount]);
 
   return (
     <AccountSwitcherContext.Provider value={{
@@ -107,6 +127,7 @@ export const AccountSwitcherProvider: React.FC<{ children: React.ReactNode }> = 
       closeSwitcher: () => setShowSwitcher(false),
       addCurrentAccount,
       removeAccount,
+      logoutCurrentAccount,
       currentUid,
     }}>
       {children}
