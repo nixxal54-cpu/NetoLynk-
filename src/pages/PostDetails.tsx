@@ -53,10 +53,10 @@ export const PostDetails: React.FC = () => {
       setLoading(false);
     });
 
-    // Listen to comments
+    // Listen to comments — oldest first (natural conversation order)
     const commentsQuery = query(
       collection(db, 'posts', id, 'comments'),
-      orderBy('createdAt', 'desc')
+      orderBy('createdAt', 'asc')
     );
     const unsubscribeComments = onSnapshot(commentsQuery, (snapshot) => {
       const commentsData = snapshot.docs.map(doc => ({
@@ -64,6 +64,19 @@ export const PostDetails: React.FC = () => {
         ...doc.data()
       })) as Comment[];
       setComments(commentsData);
+    }, (err) => {
+      console.error('Comments query error:', err);
+      // Fallback: fetch without ordering if index not ready
+      const fallbackQuery = query(collection(db, 'posts', id, 'comments'));
+      onSnapshot(fallbackQuery, (snapshot) => {
+        const commentsData = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        })) as Comment[];
+        setComments(commentsData.sort((a, b) =>
+          new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+        ));
+      });
     });
 
     return () => {
