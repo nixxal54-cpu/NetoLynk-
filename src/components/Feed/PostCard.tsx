@@ -310,7 +310,7 @@ export const PostCard: React.FC<PostCardProps> = ({ post }) => {
               onClick={(e) => { 
                 e.preventDefault();
                 e.stopPropagation(); 
-                navigate(`/post/${post.id}`); 
+                navigate(`/post/${post.id}?focus=comment`);
               }}
               className="flex items-center gap-2 group hover:text-primary transition-colors cursor-pointer"
             >
