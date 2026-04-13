@@ -1,8 +1,9 @@
 import React, { useState, useRef } from 'react';
-import { X, Camera, Loader2, Upload } from 'lucide-react';
+import { X, Camera, Loader2 } from 'lucide-react';
 import { doc, updateDoc } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { db, storage } from '../../lib/firebase';
+import { updateProfile } from 'firebase/auth';
+import { db, storage, auth } from '../../lib/firebase';
 import { User } from '../../types';
 import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'motion/react';
@@ -16,12 +17,10 @@ interface EditProfileModalProps {
 export const EditProfileModal: React.FC<EditProfileModalProps> = ({ user, isOpen, onClose }) => {
   const [displayName, setDisplayName] = useState(user.displayName);
   const [bio, setBio] = useState(user.bio || '');
-  const [profileImage, setProfileImage] = useState(user.profileImage || '');
-  const [coverImage, setCoverImage] = useState(user.coverImage || '');
-  const [profileFile, setProfileFile] = useState<File | null>(null);
-  const [coverFile, setCoverFile] = useState<File | null>(null);
   const [profilePreview, setProfilePreview] = useState(user.profileImage || '');
   const [coverPreview, setCoverPreview] = useState(user.coverImage || '');
+  const [profileFile, setProfileFile] = useState<File | null>(null);
+  const [coverFile, setCoverFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
 
   const profileInputRef = useRef<HTMLInputElement>(null);
@@ -41,38 +40,48 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({ user, isOpen
     setCoverPreview(URL.createObjectURL(file));
   };
 
-  const handleSubmit = async (e?: React.FormEvent) => {
-    e?.preventDefault();
+  const handleSave = async () => {
     setLoading(true);
     try {
-      let finalProfileImage = profileImage;
-      let finalCoverImage = coverImage;
+      let finalProfileImage = user.profileImage || '';
+      let finalCoverImage = user.coverImage || '';
 
+      // Upload profile image to Firebase Storage
       if (profileFile) {
         const storageRef = ref(storage, `profileImages/${user.uid}`);
         await uploadBytes(storageRef, profileFile);
         finalProfileImage = await getDownloadURL(storageRef);
       }
 
+      // Upload cover image to Firebase Storage
       if (coverFile) {
         const storageRef = ref(storage, `coverImages/${user.uid}`);
         await uploadBytes(storageRef, coverFile);
         finalCoverImage = await getDownloadURL(storageRef);
       }
 
-      const userRef = doc(db, 'users', user.uid);
-      await updateDoc(userRef, {
+      // Update Firestore user document
+      await updateDoc(doc(db, 'users', user.uid), {
         displayName,
         bio,
         profileImage: finalProfileImage,
         coverImage: finalCoverImage,
-        updatedAt: new Date().toISOString()
+        updatedAt: new Date().toISOString(),
       });
-      toast.success('Profile updated successfully!');
+
+      // Keep Firebase Auth profile in sync
+      if (auth.currentUser) {
+        await updateProfile(auth.currentUser, {
+          displayName,
+          photoURL: finalProfileImage,
+        });
+      }
+
+      toast.success('Profile updated!');
       onClose();
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error updating profile:', error);
-      toast.error('Failed to update profile');
+      toast.error(error.message || 'Failed to update profile');
     } finally {
       setLoading(false);
     }
@@ -83,93 +92,78 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({ user, isOpen
       {isOpen && (
         <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
           <motion.div
-            initial={{ opacity: 0, scale: 0.95, y: 20 }}
+            initial={{ opacity: 0, scale: 0.96, y: 16 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.95, y: 20 }}
+            exit={{ opacity: 0, scale: 0.96, y: 16 }}
+            transition={{ duration: 0.2 }}
             className="bg-background w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
           >
-            <div className="flex items-center justify-between p-4 border-b border-border">
-              <div className="flex items-center gap-4">
+            {/* Header */}
+            <div className="flex items-center justify-between p-4 border-b border-border shrink-0">
+              <div className="flex items-center gap-3">
                 <button onClick={onClose} className="p-2 hover:bg-accent rounded-full transition-colors">
-                  <X className="w-6 h-6" />
+                  <X className="w-5 h-5" />
                 </button>
-                <h3 className="font-bold text-xl">Edit Profile</h3>
+                <h3 className="font-bold text-lg">Edit Profile</h3>
               </div>
-              <button onClick={handleSubmit} disabled={loading}
-                className="bg-foreground text-background px-6 py-1.5 rounded-full font-bold hover:opacity-90 transition-opacity disabled:opacity-50 flex items-center gap-2">
-                {loading && <Loader2 className="w-4 h-4 animate-spin" />}
+              <button onClick={handleSave} disabled={loading}
+                className="bg-foreground text-background px-5 py-1.5 rounded-full font-bold text-sm hover:opacity-80 transition-opacity disabled:opacity-40 flex items-center gap-2">
+                {loading && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
                 Save
               </button>
             </div>
 
             <div className="flex-1 overflow-y-auto">
-              {/* Cover image */}
-              <div className="relative h-36 bg-accent/50 group cursor-pointer" onClick={() => coverInputRef.current?.click()}>
-                {coverPreview && (
-                  <img src={coverPreview} alt="Cover" className="w-full h-full object-cover" />
-                )}
-                <div className="absolute inset-0 flex items-center justify-center bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <div className="flex flex-col items-center gap-1 text-white">
-                    <Camera className="w-8 h-8" />
-                    <span className="text-xs font-medium">Change cover photo</span>
-                  </div>
+              {/* Cover photo */}
+              <div
+                className="relative h-32 bg-accent/50 cursor-pointer group"
+                onClick={() => coverInputRef.current?.click()}
+              >
+                {coverPreview
+                  ? <img src={coverPreview} alt="Cover" className="w-full h-full object-cover" />
+                  : <div className="w-full h-full flex items-center justify-center text-muted-foreground text-sm">Tap to add cover photo</div>
+                }
+                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                  <Camera className="w-7 h-7 text-white" />
                 </div>
-                {!coverPreview && (
-                  <div className="absolute inset-0 flex items-center justify-center text-muted-foreground">
-                    <div className="flex flex-col items-center gap-2">
-                      <Upload className="w-8 h-8" />
-                      <span className="text-sm">Click to add cover photo</span>
-                    </div>
-                  </div>
-                )}
                 <input ref={coverInputRef} type="file" accept="image/*" onChange={handleCoverPick} className="hidden" />
               </div>
 
-              {/* Profile image */}
-              <div className="px-4 relative">
+              {/* Profile photo + fields */}
+              <div className="px-4 pb-6">
+                {/* Profile photo circle */}
                 <div
-                  className="absolute -top-14 left-4 w-28 h-28 rounded-full border-4 border-background overflow-hidden bg-accent group cursor-pointer"
+                  className="relative w-24 h-24 rounded-full border-4 border-background -mt-12 mb-4 cursor-pointer group overflow-hidden bg-accent"
                   onClick={() => profileInputRef.current?.click()}
                 >
                   <img
                     src={profilePreview || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.username}`}
-                    alt="Profile"
-                    className="w-full h-full object-cover"
+                    alt="Profile" className="w-full h-full object-cover"
                   />
-                  <div className="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <Camera className="w-7 h-7 text-white" />
+                  <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center rounded-full">
+                    <Camera className="w-6 h-6 text-white" />
                   </div>
                   <input ref={profileInputRef} type="file" accept="image/*" onChange={handleProfilePick} className="hidden" />
                 </div>
 
-                <div className="pt-18 space-y-4 pb-6" style={{ paddingTop: '4.5rem' }}>
-                  {(profileFile || coverFile) && (
-                    <div className="bg-green-500/10 border border-green-500/30 rounded-xl p-3 text-green-500 text-sm">
-                      ✓ {[profileFile && 'Profile photo', coverFile && 'Cover photo'].filter(Boolean).join(' & ')} ready to upload
-                    </div>
-                  )}
+                {(profileFile || coverFile) && (
+                  <div className="text-xs text-primary font-medium mb-4 flex items-center gap-1.5">
+                    <div className="w-1.5 h-1.5 rounded-full bg-primary" />
+                    {[profileFile && 'Profile photo', coverFile && 'Cover photo'].filter(Boolean).join(' & ')} ready to save
+                  </div>
+                )}
+
+                <div className="space-y-4">
                   <div>
-                    <label className="text-sm font-medium text-muted-foreground ml-1">Name</label>
+                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider ml-0.5">Name</label>
                     <input type="text" value={displayName} onChange={e => setDisplayName(e.target.value)}
-                      className="w-full mt-1 px-4 py-2 rounded-xl bg-accent/30 border border-border focus:border-primary outline-none transition-all" />
+                      className="w-full mt-1.5 px-4 py-2.5 rounded-xl bg-accent/40 border border-border focus:border-primary outline-none transition-colors" />
                   </div>
                   <div>
-                    <label className="text-sm font-medium text-muted-foreground ml-1">Bio</label>
+                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider ml-0.5">Bio</label>
                     <textarea value={bio} onChange={e => setBio(e.target.value)} rows={3}
-                      className="w-full mt-1 px-4 py-2 rounded-xl bg-accent/30 border border-border focus:border-primary outline-none transition-all resize-none"
-                      placeholder="Tell us about yourself..." />
-                  </div>
-                  <div>
-                    <label className="text-sm font-medium text-muted-foreground ml-1">Profile Image URL (optional)</label>
-                    <input type="text" value={profileImage} onChange={e => { setProfileImage(e.target.value); setProfilePreview(e.target.value); }}
-                      className="w-full mt-1 px-4 py-2 rounded-xl bg-accent/30 border border-border focus:border-primary outline-none transition-all"
-                      placeholder="https://..." />
-                  </div>
-                  <div>
-                    <label className="text-sm font-medium text-muted-foreground ml-1">Cover Image URL (optional)</label>
-                    <input type="text" value={coverImage} onChange={e => { setCoverImage(e.target.value); setCoverPreview(e.target.value); }}
-                      className="w-full mt-1 px-4 py-2 rounded-xl bg-accent/30 border border-border focus:border-primary outline-none transition-all"
-                      placeholder="https://..." />
+                      className="w-full mt-1.5 px-4 py-2.5 rounded-xl bg-accent/40 border border-border focus:border-primary outline-none transition-colors resize-none"
+                      placeholder="Tell people about yourself..." />
                   </div>
                 </div>
               </div>
