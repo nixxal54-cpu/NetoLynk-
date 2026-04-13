@@ -84,6 +84,20 @@ export const PostDetails: React.FC = () => {
         commentsCount: increment(1)
       });
 
+      // Notify post owner (skip if commenting on own post)
+      if (post && post.userId !== user.uid) {
+        addDoc(collection(db, 'notifications'), {
+          recipientId: post.userId,
+          senderId: user.uid,
+          senderUsername: user.username,
+          senderProfileImage: user.profileImage || '',
+          type: 'comment',
+          postId: id,
+          read: false,
+          createdAt: new Date().toISOString()
+        }).catch(() => {}); // non-critical
+      }
+
       setNewComment('');
       toast.success('Comment added');
     } catch (error) {
