@@ -1,11 +1,14 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { doc, getDoc, collection, addDoc, query, where, orderBy, onSnapshot, serverTimestamp, updateDoc, increment } from 'firebase/firestore';
+import {
+  doc, getDoc, collection, addDoc, query, orderBy,
+  onSnapshot, serverTimestamp, updateDoc, increment, deleteDoc
+} from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { useAuth } from '../context/AuthContext';
 import { Post as PostType } from '../types';
 import { PostCard } from '../components/Feed/PostCard';
-import { ChevronLeft, Loader2, Send } from 'lucide-react';
+import { ChevronLeft, Loader2, Send, Trash2, MoreHorizontal } from 'lucide-react';
 import { motion } from 'motion/react';
 import { formatDistanceToNow } from 'date-fns';
 import { toast } from 'sonner';
@@ -29,10 +32,11 @@ export const PostDetails: React.FC = () => {
   const [newComment, setNewComment] = useState('');
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
   const commentInputRef = useRef<HTMLInputElement>(null);
   const { search } = window.location;
 
-  // Auto-focus comment input if navigated with ?focus=comment
   useEffect(() => {
     if (search.includes('focus=comment')) {
       setTimeout(() => commentInputRef.current?.focus(), 300);
@@ -42,7 +46,6 @@ export const PostDetails: React.FC = () => {
   useEffect(() => {
     if (!id) return;
 
-    // Listen to post
     const postRef = doc(db, 'posts', id);
     const unsubscribePost = onSnapshot(postRef, (docSnap) => {
       if (docSnap.exists()) {
@@ -53,7 +56,7 @@ export const PostDetails: React.FC = () => {
       setLoading(false);
     });
 
-    // Listen to comments — oldest first (natural conversation order)
+    // ✅ No limit() — all comments persist, only deleted when user explicitly deletes
     const commentsQuery = query(
       collection(db, 'posts', id, 'comments'),
       orderBy('createdAt', 'asc')
@@ -66,7 +69,7 @@ export const PostDetails: React.FC = () => {
       setComments(commentsData);
     }, (err) => {
       console.error('Comments query error:', err);
-      // Fallback: fetch without ordering if index not ready
+      // Fallback without ordering if index not ready
       const fallbackQuery = query(collection(db, 'posts', id, 'comments'));
       onSnapshot(fallbackQuery, (snapshot) => {
         const commentsData = snapshot.docs.map(doc => ({
@@ -85,6 +88,14 @@ export const PostDetails: React.FC = () => {
     };
   }, [id]);
 
+  // Close menu when clicking outside
+  useEffect(() => {
+    if (!menuOpenId) return;
+    const handle = () => setMenuOpenId(null);
+    document.addEventListener('click', handle);
+    return () => document.removeEventListener('click', handle);
+  }, [menuOpenId]);
+
   const handleAddComment = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newComment.trim() || !user || !id) return;
@@ -101,12 +112,10 @@ export const PostDetails: React.FC = () => {
         serverCreatedAt: serverTimestamp()
       });
 
-      // Increment comment count on post
       await updateDoc(doc(db, 'posts', id), {
         commentsCount: increment(1)
       });
 
-      // Notify post owner (skip if commenting on own post)
       if (post && post.userId !== user.uid) {
         addDoc(collection(db, 'notifications'), {
           recipientId: post.userId,
@@ -117,7 +126,7 @@ export const PostDetails: React.FC = () => {
           postId: id,
           read: false,
           createdAt: new Date().toISOString()
-        }).catch(() => {}); // non-critical
+        }).catch(() => {});
       }
 
       setNewComment('');
@@ -127,6 +136,28 @@ export const PostDetails: React.FC = () => {
       toast.error('Failed to add comment');
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  // ✅ Delete comment — only commenter or post owner can delete
+  const handleDeleteComment = async (comment: Comment) => {
+    if (!user || !id) return;
+    const canDelete = user.uid === comment.userId || user.uid === post?.userId;
+    if (!canDelete) return;
+
+    setDeletingId(comment.id);
+    try {
+      await deleteDoc(doc(db, 'posts', id, 'comments', comment.id));
+      await updateDoc(doc(db, 'posts', id), {
+        commentsCount: increment(-1)
+      });
+      toast.success('Comment deleted');
+    } catch (error) {
+      console.error('Error deleting comment:', error);
+      toast.error('Failed to delete comment');
+    } finally {
+      setDeletingId(null);
+      setMenuOpenId(null);
     }
   };
 
@@ -164,26 +195,65 @@ export const PostDetails: React.FC = () => {
         <PostCard post={post} />
 
         <div className="border-t border-border">
-          {comments.map(comment => (
-            <div key={comment.id} className="p-4 border-b border-border flex gap-3 hover:bg-accent/5 transition-colors">
-              <img 
-                src={comment.userProfileImage} 
-                alt={comment.username} 
-                className="w-10 h-10 rounded-full object-cover"
-              />
-              <div>
-                <div className="flex items-center gap-2">
-                  <span className="font-bold hover:underline cursor-pointer" onClick={() => navigate(`/profile/${comment.username}`)}>
-                    {comment.username}
-                  </span>
-                  <span className="text-muted-foreground text-sm">
-                    {formatDistanceToNow(new Date(comment.createdAt))}
-                  </span>
+          {comments.length === 0 && (
+            <p className="text-center text-muted-foreground text-sm py-8">No comments yet. Be the first!</p>
+          )}
+          {comments.map(comment => {
+            const canDelete = user && (user.uid === comment.userId || user.uid === post.userId);
+            const isDeleting = deletingId === comment.id;
+            return (
+              <div key={comment.id} className="p-4 border-b border-border flex gap-3 hover:bg-accent/5 transition-colors group">
+                <img 
+                  src={comment.userProfileImage} 
+                  alt={comment.username} 
+                  className="w-10 h-10 rounded-full object-cover flex-shrink-0"
+                />
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <span
+                        className="font-bold hover:underline cursor-pointer text-sm"
+                        onClick={() => navigate(`/profile/${comment.username}`)}
+                      >
+                        {comment.username}
+                      </span>
+                      <span className="text-muted-foreground text-xs">
+                        {formatDistanceToNow(new Date(comment.createdAt), { addSuffix: true })}
+                      </span>
+                    </div>
+
+                    {/* ✅ Delete button — only shown to comment owner or post owner */}
+                    {canDelete && (
+                      <div className="relative">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setMenuOpenId(menuOpenId === comment.id ? null : comment.id);
+                          }}
+                          className="p-1 hover:bg-accent rounded-full text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity"
+                        >
+                          <MoreHorizontal className="w-4 h-4" />
+                        </button>
+                        {menuOpenId === comment.id && (
+                          <div className="absolute right-0 top-full mt-1 z-30 bg-background border border-border rounded-xl shadow-lg py-1 min-w-[130px]">
+                            <button
+                              onClick={() => handleDeleteComment(comment)}
+                              disabled={isDeleting}
+                              className="w-full flex items-center gap-2 px-4 py-2 hover:bg-accent transition-colors text-sm text-destructive"
+                            >
+                              {isDeleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                              Delete
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                  <p className="mt-1 text-[15px] break-words">{comment.text}</p>
                 </div>
-                <p className="mt-1 text-[15px]">{comment.text}</p>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
 
@@ -192,7 +262,7 @@ export const PostDetails: React.FC = () => {
           <img 
             src={user?.profileImage || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user?.username}`} 
             alt="You" 
-            className="w-10 h-10 rounded-full object-cover hidden sm:block"
+            className="w-10 h-10 rounded-full object-cover hidden sm:block flex-shrink-0"
           />
           <input
             ref={commentInputRef}
