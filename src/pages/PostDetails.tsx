@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { doc, getDoc, collection, addDoc, query, where, orderBy, onSnapshot, serverTimestamp, updateDoc, increment } from 'firebase/firestore';
 import { db } from '../lib/firebase';
@@ -29,6 +29,15 @@ export const PostDetails: React.FC = () => {
   const [newComment, setNewComment] = useState('');
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const commentInputRef = useRef<HTMLInputElement>(null);
+  const { search } = window.location;
+
+  // Auto-focus comment input if navigated with ?focus=comment
+  useEffect(() => {
+    if (search.includes('focus=comment')) {
+      setTimeout(() => commentInputRef.current?.focus(), 300);
+    }
+  }, [search]);
 
   useEffect(() => {
     if (!id) return;
@@ -138,7 +147,7 @@ export const PostDetails: React.FC = () => {
         <h2 className="text-xl font-bold">Post</h2>
       </header>
 
-      <div className="flex-1 overflow-y-auto pb-24 md:pb-0">
+      <div className="flex-1 overflow-y-auto pb-[140px] md:pb-4">
         <PostCard post={post} />
 
         <div className="border-t border-border">
@@ -165,7 +174,7 @@ export const PostDetails: React.FC = () => {
         </div>
       </div>
 
-      <div className="sticky bottom-0 md:relative border-t border-border bg-background p-4">
+      <div className="sticky bottom-[68px] md:bottom-0 md:relative border-t border-border bg-background p-4 z-30">
         <form onSubmit={handleAddComment} className="flex gap-3 items-center">
           <img 
             src={user?.profileImage || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user?.username}`} 
@@ -173,6 +182,7 @@ export const PostDetails: React.FC = () => {
             className="w-10 h-10 rounded-full object-cover hidden sm:block"
           />
           <input
+            ref={commentInputRef}
             type="text"
             value={newComment}
             onChange={(e) => setNewComment(e.target.value)}
