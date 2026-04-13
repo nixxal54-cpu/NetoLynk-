@@ -1,8 +1,10 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster } from 'sonner';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ThemeProvider } from './context/ThemeContext';
+import { AccountSwitcherProvider } from './context/AccountSwitcherContext';
+import { AccountSwitcher } from './components/AccountSwitcher';
 import { Sidebar, BottomNav } from './components/Layout/Navigation';
 import { AuthForm } from './components/Auth/AuthForm';
 import { Home } from './pages/Home';
@@ -16,7 +18,6 @@ import { PostDetails } from './pages/PostDetails';
 import { Settings } from './pages/Settings';
 import { Activity } from './pages/Activity';
 import { Loader2 } from 'lucide-react';
-
 import { useNetolynkSystem } from './hooks/useNetolynkSystem';
 
 const AppContent: React.FC = () => {
@@ -81,6 +82,9 @@ const AppContent: React.FC = () => {
           <p className="text-sm text-muted-foreground">Suggestions will appear here</p>
         </div>
       </div>
+
+      {/* ✅ Account Switcher bottom sheet — renders on top of everything */}
+      <AccountSwitcher />
       <BottomNav />
     </div>
   );
@@ -90,10 +94,12 @@ export default function App() {
   return (
     <ThemeProvider>
       <AuthProvider>
-        <Router>
-          <AppContent />
-          <Toaster position="top-center" richColors />
-        </Router>
+        <AccountSwitcherProvider>
+          <Router>
+            <AppContent />
+            <Toaster position="top-center" richColors />
+          </Router>
+        </AccountSwitcherProvider>
       </AuthProvider>
     </ThemeProvider>
   );
