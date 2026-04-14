@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { collection, query, where, getDocs, addDoc, serverTimestamp, limit, orderBy } from 'firebase/firestore';
+import { collection, query, where, getDocs, addDoc, serverTimestamp, limit, orderBy, doc, setDoc, getDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { useAuth } from '../context/AuthContext';
 
@@ -213,6 +213,36 @@ export const useNetolynkSystem = () => {
 
     const runSystemCheck = async () => {
       try {
+        // Ensure the system user Firestore document exists (so their profile page shows correctly)
+        const userDocRef = doc(db, 'users', NETOLYNK_USER.uid);
+        const userDocSnap = await getDoc(userDocRef);
+        if (!userDocSnap.exists()) {
+          await setDoc(userDocRef, {
+            uid: NETOLYNK_USER.uid,
+            username: NETOLYNK_USER.username,
+            displayName: NETOLYNK_USER.displayName,
+            profileImage: NETOLYNK_USER.profileImage,
+            coverImage: '',
+            bio: 'The official NetoLynk account. Building the future of social networking.',
+            location: 'Global',
+            website: 'netolynk.com',
+            followers: [],
+            followersCount: 0,
+            following: [],
+            followingCount: 0,
+            postsCount: 0,
+            email: 'official@netolynk.com',
+            createdAt: new Date().toISOString(),
+            isOfficial: true,
+          });
+        } else {
+          // Always keep profileImage in sync in case it was missing
+          const existing = userDocSnap.data();
+          if (!existing.profileImage || existing.profileImage !== NETOLYNK_USER.profileImage) {
+            await setDoc(userDocRef, { profileImage: NETOLYNK_USER.profileImage }, { merge: true });
+          }
+        }
+
         // Check if we already posted today
         const today = new Date();
         today.setHours(0, 0, 0, 0);
