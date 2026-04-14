@@ -41,7 +41,7 @@ export const Home: React.FC = () => {
       className="flex-1 max-w-2xl border-x border-border min-h-screen pb-20 md:pb-0">
       <header className="sticky top-0 z-40 bg-background/80 backdrop-blur-md border-b border-border">
         <div className="p-4 flex items-center justify-between">
-          <span style={{ fontFamily: "'Syne', sans-serif", fontWeight: 800, letterSpacing: "0.08em", fontSize: "1.35rem" }} className="text-foreground tracking-widest uppercase">NetoLynk</span>
+          <span style={{ fontFamily: "'Inter', 'SF Pro Display', -apple-system, sans-serif", fontWeight: 700, letterSpacing: "0.18em", fontSize: "1.0rem" }} className="text-foreground uppercase">NETOLYNK</span>
           <div className="flex items-center gap-3">
             <button onClick={() => navigate('/notifications')}
               className="md:hidden p-2 hover:bg-accent rounded-full text-muted-foreground hover:text-foreground transition-colors">
