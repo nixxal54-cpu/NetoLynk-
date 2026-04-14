@@ -28,7 +28,7 @@ const AppContent: React.FC = () => {
     return (
       <div className="h-screen w-screen flex items-center justify-center bg-background">
         <div className="text-center">
-          <h1 className="text-4xl font-bold text-primary tracking-tighter mb-4">NETOLYNK</h1>
+          <img src="/netolynk-logo.png" alt="NetoLynk" className="h-16 w-auto object-contain mx-auto mb-4" />
           <Loader2 className="w-10 h-10 animate-spin text-primary mx-auto" />
         </div>
       </div>
