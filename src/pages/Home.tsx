@@ -41,7 +41,7 @@ export const Home: React.FC = () => {
       className="flex-1 max-w-2xl border-x border-border min-h-screen pb-20 md:pb-0">
       <header className="sticky top-0 z-40 bg-background/80 backdrop-blur-md border-b border-border">
         <div className="p-4 flex items-center justify-between">
-          <h2 className="text-xl font-bold tracking-tight">NetoLynk</h2>
+          <img src="/netolynk-logo.png" alt="NetoLynk" className="h-8 w-auto object-contain" />
           <div className="flex items-center gap-3">
             <button onClick={() => navigate('/notifications')}
               className="md:hidden p-2 hover:bg-accent rounded-full text-muted-foreground hover:text-foreground transition-colors">
