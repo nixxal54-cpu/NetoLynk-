@@ -4,7 +4,7 @@ import { auth } from '../../lib/firebase';
 import { toast } from 'sonner';
 import { motion } from 'motion/react';
 import { useAccountSwitcher, SavedAccount } from '../../context/AccountSwitcherContext';
-import { ChevronRight, Eye, EyeOff, Loader2, Sparkles } from 'lucide-react';
+import { ChevronRight, Eye, EyeOff, Loader2 } from 'lucide-react';
 import { OnboardingFlow } from './OnboardingFlow';
 
 export const AuthForm: React.FC = () => {
@@ -60,7 +60,9 @@ export const AuthForm: React.FC = () => {
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
         className="max-w-md w-full p-8 bg-card rounded-3xl shadow-2xl border border-border">
         <div className="text-center mb-6">
-          <h2 className="text-2xl font-bold text-primary tracking-tighter">NETOLYNK</h2>
+          <div className="flex items-center justify-center mb-2">
+            <img src="/netolynk-logo.png" alt="NetoLynk" className="h-14 w-auto object-contain" />
+          </div>
           <p className="text-muted-foreground text-sm mt-1">Welcome Back</p>
         </div>
         <div className="space-y-3">
@@ -90,9 +92,8 @@ export const AuthForm: React.FC = () => {
       transition={{ duration: 0.5, ease: 'easeOut' }}
       className="max-w-md w-full p-8 bg-card rounded-3xl shadow-2xl border border-border">
       <div className="text-center mb-8">
-        <div className="flex items-center justify-center gap-2 mb-2">
-          <Sparkles className="w-5 h-5 text-primary" />
-          <h2 className="text-4xl font-bold text-primary tracking-tighter">NETOLYNK</h2>
+        <div className="flex items-center justify-center mb-2">
+          <img src="/netolynk-logo.png" alt="NetoLynk" className="h-16 w-auto object-contain" />
         </div>
         <p className="text-muted-foreground mt-1">Sign in to your account</p>
       </div>
