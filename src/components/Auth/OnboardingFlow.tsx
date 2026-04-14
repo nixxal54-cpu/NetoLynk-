@@ -178,7 +178,7 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ onBack }) => {
             <ArrowLeft className="w-5 h-5" />
           </button>
           <div className="flex-1 flex justify-center">
-            <span className="text-base font-black tracking-tighter text-white">NETOLYNK</span>
+            <img src="/netolynk-logo.png" alt="NetoLynk" className="h-8 w-auto object-contain" />
           </div>
           <div className="w-9" />
         </div>
