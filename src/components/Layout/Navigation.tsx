@@ -71,8 +71,7 @@ export const Sidebar: React.FC = () => {
   return (
     <aside className="hidden md:flex flex-col w-64 h-screen sticky top-0 border-r border-border p-4 bg-background">
       <div className="mb-8 px-4">
-        <h1 className="text-2xl font-bold text-primary tracking-tighter">NETOLYNK</h1>
-        <p className="text-[10px] text-muted-foreground font-mono">by NGAI</p>
+        <img src="/netolynk-logo.png" alt="NetoLynk" className="h-10 w-auto object-contain" />
       </div>
 
       <nav className="flex-1 space-y-2">
