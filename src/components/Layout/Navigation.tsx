@@ -1,11 +1,13 @@
 import React, { useRef, useCallback, useEffect } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
-import { Home, Search, Bell, Mail, User, PlusSquare, LogOut, Settings, Sun, Moon } from 'lucide-react';
+import { Home, Search, Bell, Mail, User, PlusSquare, LogOut, Sun, Moon } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
-import { auth } from '../../lib/firebase';
+import { auth, db } from '../../lib/firebase';
 import { cn } from '../../lib/utils';
 import { useAccountSwitcher } from '../../context/AccountSwitcherContext';
+import { collection, query, where, onSnapshot } from 'firebase/firestore';
+import { useState } from 'react';
 
 // Long-press duration in ms
 const LONG_PRESS_MS = 500;
@@ -37,11 +39,71 @@ function useLongPress(onLongPress: () => void, onClick?: () => void) {
     onTouchStart: start,
     onTouchEnd: (e: React.TouchEvent) => {
       cancel();
-      // Prevent ghost click on mobile
       if (didFire.current) e.preventDefault();
     },
     onClick: handleClick,
   };
+}
+
+function useUnreadCounts() {
+  const { user } = useAuth();
+  const [unreadMessages, setUnreadMessages] = useState(0);
+  const [unreadNotifications, setUnreadNotifications] = useState(0);
+
+  useEffect(() => {
+    if (!user) return;
+
+    // Unread messages: sum unreadCount across all chats
+    const chatsQ = query(
+      collection(db, 'chats'),
+      where('participants', 'array-contains', user.uid)
+    );
+    const unsubChats = onSnapshot(chatsQ, (snap) => {
+      let total = 0;
+      snap.docs.forEach((d) => {
+        const cnt = d.data()?.unreadCount?.[user.uid] ?? 0;
+        total += cnt;
+      });
+      setUnreadMessages(total);
+    });
+
+    // Unread notifications: user-specific + system, not read
+    const notifUserQ = query(
+      collection(db, 'notifications'),
+      where('recipientId', '==', user.uid),
+      where('read', '==', false)
+    );
+    const notifSystemQ = query(
+      collection(db, 'notifications'),
+      where('recipientId', '==', 'all'),
+      where('read', '==', false)
+    );
+
+    const unsubNotifUser = onSnapshot(notifUserQ, (snap) => {
+      setUnreadNotifications((prev) => {
+        // We'll combine both in the system snap
+        return snap.size;
+      });
+    });
+
+    // Note: system notifications can't easily be marked per-user as read,
+    // so we just count them and show total personal unread only
+    return () => {
+      unsubChats();
+      unsubNotifUser();
+    };
+  }, [user?.uid]);
+
+  return { unreadMessages, unreadNotifications };
+}
+
+function Badge({ count }: { count: number }) {
+  if (count <= 0) return null;
+  return (
+    <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center px-1 leading-none shadow-sm">
+      {count > 99 ? '99+' : count}
+    </span>
+  );
 }
 
 export const Sidebar: React.FC = () => {
@@ -49,18 +111,18 @@ export const Sidebar: React.FC = () => {
   const { theme, toggleTheme } = useTheme();
   const navigate = useNavigate();
   const { openSwitcher, addCurrentAccount, currentUid } = useAccountSwitcher();
+  const { unreadMessages, unreadNotifications } = useUnreadCounts();
 
-  // Auto-register current account whenever user changes
   useEffect(() => {
     if (currentUid) addCurrentAccount(currentUid);
   }, [currentUid, addCurrentAccount]);
 
   const navItems = [
-    { icon: Home, label: 'Home', path: '/' },
-    { icon: Search, label: 'Explore', path: '/explore' },
-    { icon: Bell, label: 'Notifications', path: '/notifications' },
-    { icon: Mail, label: 'Messages', path: '/messages' },
-    { icon: User, label: 'Profile', path: `/profile/${user?.username}` },
+    { icon: Home, label: 'Home', path: '/', badge: 0 },
+    { icon: Search, label: 'Explore', path: '/explore', badge: 0 },
+    { icon: Bell, label: 'Notifications', path: '/notifications', badge: unreadNotifications },
+    { icon: Mail, label: 'Messages', path: '/messages', badge: unreadMessages },
+    { icon: User, label: 'Profile', path: `/profile/${user?.username}`, badge: 0 },
   ];
 
   const avatarLongPress = useLongPress(
@@ -86,7 +148,10 @@ export const Sidebar: React.FC = () => {
               )
             }
           >
-            <item.icon className="w-6 h-6 group-hover:scale-110 transition-transform" />
+            <span className="relative">
+              <item.icon className="w-6 h-6 group-hover:scale-110 transition-transform" />
+              <Badge count={item.badge} />
+            </span>
             <span className="text-lg">{item.label}</span>
           </NavLink>
         ))}
@@ -110,7 +175,6 @@ export const Sidebar: React.FC = () => {
         </button>
 
         <div className="flex items-center gap-3 px-4 py-3 border-t border-border pt-4">
-          {/* ✅ Long-press avatar to open account switcher */}
           <button
             {...avatarLongPress}
             className="relative flex-shrink-0 select-none"
@@ -140,6 +204,7 @@ export const BottomNav: React.FC = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
   const { openSwitcher, addCurrentAccount, currentUid } = useAccountSwitcher();
+  const { unreadMessages, unreadNotifications } = useUnreadCounts();
 
   useEffect(() => {
     if (currentUid) addCurrentAccount(currentUid);
@@ -168,14 +233,16 @@ export const BottomNav: React.FC = () => {
         </button>
       </div>
 
-      <NavLink to="/messages" className={({ isActive }) => cn("p-2 transition-colors", isActive ? "text-primary" : "text-foreground/60")}>
+      <NavLink to="/messages" className={({ isActive }) => cn("relative p-2 transition-colors", isActive ? "text-primary" : "text-foreground/60")}>
         <Mail className="w-6 h-6" />
-      </NavLink>
-      <NavLink to="/notifications" className={({ isActive }) => cn("p-2 transition-colors hidden sm:block", isActive ? "text-primary" : "text-foreground/60")}>
-        <Bell className="w-6 h-6" />
+        <Badge count={unreadMessages} />
       </NavLink>
 
-      {/* ✅ Long-press profile icon to open account switcher */}
+      <NavLink to="/notifications" className={({ isActive }) => cn("relative p-2 transition-colors hidden sm:block", isActive ? "text-primary" : "text-foreground/60")}>
+        <Bell className="w-6 h-6" />
+        <Badge count={unreadNotifications} />
+      </NavLink>
+
       <button
         {...profileLongPress}
         className={cn(
