@@ -41,7 +41,6 @@ const SUGGESTED_ACCOUNTS = [
   { username: '_a.r.t.i.s', displayName: 'A.R.T.I.S.', avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=artis' },
   { username: 'mrsovo.1', displayName: 'RIYAH PRIVV', avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=mrsovo' },
   { username: 'sempre_makina', displayName: 'Sempre makina', avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=sempre' },
-  { username: 'netolynk_official', displayName: 'NetoLynk Official', avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=netolynk' },
   { username: 'techvibes', displayName: 'Tech Vibes', avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=techvibes' },
 ];
 
